@@ -1,0 +1,38 @@
+# ==============================================================================
+# FlavourConnect — .gitignore
+# ==============================================================================
+
+# ── Secrets — NEVER commit these ──────────────────────────────────────────────
+backend/.env
+websocket/.env
+.env
+
+# Compiled / generated
+backend/vendor/
+websocket/vendor/
+node_modules/
+
+# Uploads — runtime data, not source
+backend/uploads/logos/*
+backend/uploads/menu/*
+!backend/uploads/logos/.gitkeep
+!backend/uploads/menu/.gitkeep
+
+# Logs
+logs/
+*.log
+backend/logs/
+
+# Database backups
+database/backups/
+
+# OS and editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# PHP
+*.cache

@@ -1,0 +1,31 @@
+{
+    "name": "flavourconnect/backend",
+    "description": "FlavourConnect REST API Backend",
+    "type": "project",
+    "require": {
+        "php": ">=8.1"
+    },
+    "autoload": {
+        "psr-4": {
+            "FlavourConnect\\Config\\":      "config/",
+            "FlavourConnect\\Controllers\\": "controllers/",
+            "FlavourConnect\\Exceptions\\":  "utils/",
+            "FlavourConnect\\Middleware\\":  "middleware/",
+            "FlavourConnect\\Routes\\":      "routes/",
+            "FlavourConnect\\Services\\":    "services/",
+            "FlavourConnect\\Utils\\":       "utils/"
+        }
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "FlavourConnect\\Tests\\": "tests/"
+        }
+    },
+    "config": {
+        "optimize-autoloader": true,
+        "sort-packages": true
+    },
+    "scripts": {
+        "test": "phpunit tests/ --testdox"
+    }
+}

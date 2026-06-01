@@ -1,0 +1,19 @@
+{
+    "name": "flavourconnect/websocket",
+    "description": "FlavourConnect WebSocket Server",
+    "type": "project",
+    "require": {
+        "php": ">=8.1",
+        "cboden/ratchet": "^0.4",
+        "react/http": "^1.9",
+        "react/socket": "^1.13"
+    },
+    "autoload": {
+        "psr-4": {
+            "FlavourConnect\\Ws\\": "src/"
+        }
+    },
+    "config": {
+        "optimize-autoloader": true
+    }
+}
