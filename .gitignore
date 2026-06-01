@@ -36,4 +36,8 @@ Thumbs.db
 
 # PHP
 *.cache
-*.env*
+
+.env
+*.env
+*.env.*
+frontend/Pasted image.png

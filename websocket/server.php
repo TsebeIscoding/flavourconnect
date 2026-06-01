@@ -21,15 +21,26 @@ use Ratchet\Http\HttpServer;
 use Ratchet\WebSocket\WsServer;
 use Ratchet\MessageComponentInterface;
 use Ratchet\ConnectionInterface;
-use React\EventLoop\Factory as LoopFactory;
+use React\EventLoop\Loop;
 use React\Socket\Server as ReactServer;
 use React\Http\Server as ReactHttpServer;
 use Psr\Http\Message\ServerRequestInterface;
 
-// Load .env
-$env = parse_ini_file(__DIR__ . '/.env');
-foreach ($env as $k => $v) {
-    $_ENV[$k] = $v;
+// Load .env — line-by-line parser handles comments and special characters safely
+if (file_exists(__DIR__ . '/.env')) {
+    $lines = file(__DIR__ . '/.env', FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
+    foreach ($lines as $line) {
+        if (str_starts_with(trim($line), '#') || !str_contains($line, '=')) {
+            continue;
+        }
+        [$k, $v] = explode('=', $line, 2);
+        $k = trim($k);
+        $v = trim($v, " \t\n\r\0\x0B\"'");
+        if (!isset($_ENV[$k])) {
+            $_ENV[$k] = $v;
+            putenv("{$k}={$v}");
+        }
+    }
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -136,8 +147,11 @@ class FlavourConnectWs implements MessageComponentInterface
         parse_str($queryString, $params);
         $token = $params['token'] ?? '';
 
+        echo "[WS] onOpen id={$conn->resourceId} token_length=" . strlen($token) . "\n";
+
         $user = $this->verifyToken($token);
         if (!$user) {
+            echo "[WS] AUTH FAILED for id={$conn->resourceId} — token rejected\n";
             $conn->send(json_encode([
                 'event'   => 'error',
                 'payload' => ['code' => 'AUTH_FAILED', 'message' => 'Invalid token'],
@@ -322,10 +336,16 @@ class FlavourConnectWs implements MessageComponentInterface
     private function verifyToken(string $token): ?array
     {
         try {
-            if (empty($token)) return null;
+            if (empty($token)) {
+                echo "[WS] verifyToken: empty token\n";
+                return null;
+            }
 
             $parts = explode('.', $token);
-            if (count($parts) !== 3) return null;
+            if (count($parts) !== 3) {
+                echo "[WS] verifyToken: wrong part count " . count($parts) . "\n";
+                return null;
+            }
 
             [$headerB64, $payloadB64, $signatureB64] = $parts;
 
@@ -334,22 +354,37 @@ class FlavourConnectWs implements MessageComponentInterface
                 hash_hmac('sha256', "{$headerB64}.{$payloadB64}", $this->jwtSecret, true)
             ), '+/', '-_'), '=');
 
-            if (!hash_equals($expectedSig, $signatureB64)) return null;
+            if (!hash_equals($expectedSig, $signatureB64)) {
+                echo "[WS] verifyToken: signature mismatch\n";
+                echo "[WS]   expected: {$expectedSig}\n";
+                echo "[WS]   got:      {$signatureB64}\n";
+                echo "[WS]   secret_len: " . strlen($this->jwtSecret) . "\n";
+                return null;
+            }
 
             $claims = json_decode(
                 base64_decode(strtr($payloadB64, '-_', '+/')),
                 true
             );
 
-            if (!is_array($claims)) return null;
-            if (($claims['exp'] ?? 0) < time()) return null;
+            if (!is_array($claims)) {
+                echo "[WS] verifyToken: invalid claims JSON\n";
+                return null;
+            }
 
+            if (($claims['exp'] ?? 0) < time()) {
+                echo "[WS] verifyToken: token expired at " . ($claims['exp'] ?? 0) . " now=" . time() . "\n";
+                return null;
+            }
+
+            echo "[WS] verifyToken: OK user={$claims['sub']} role={$claims['role']}\n";
             return [
                 'user_id'       => $claims['sub'],
                 'role'          => $claims['role'],
                 'restaurant_id' => $claims['restaurant_id'] ?? null,
             ];
-        } catch (\Throwable) {
+        } catch (\Throwable $e) {
+            echo "[WS] verifyToken exception: " . $e->getMessage() . "\n";
             return null;
         }
     }
@@ -359,37 +394,35 @@ class FlavourConnectWs implements MessageComponentInterface
 // Boot Server
 // ─────────────────────────────────────────────────────────────
 
-$loop    = LoopFactory::create();
+$loop    = Loop::get();
 $manager = new ConnectionManager();
 $wsApp   = new FlavourConnectWs($manager);
 
 // ── WebSocket server (public, port 8080) ──────────────────────
-$wsPort   = (int)($_ENV['WS_PORT'] ?? 8080);
-$wsServer = IoServer::factory(
-    new HttpServer(new WsServer($wsApp)),
-    $wsPort,
-    '0.0.0.0',
+$wsPort    = (int)($_ENV['WS_PORT'] ?? 8080);
+$wsSocket  = new ReactServer("0.0.0.0:{$wsPort}", $loop);
+$wsServer  = new IoServer(
+    new HttpServer(
+        new WsServer($wsApp)
+    ),
+    $wsSocket,
     $loop
 );
 
 echo "[WS] WebSocket server started on port {$wsPort}\n";
 
 // ── Internal HTTP server (private, port 8081) ─────────────────
-// Receives broadcast requests from REST API
 $internalPort   = (int)($_ENV['WS_INTERNAL_PORT'] ?? 8081);
 $internalSecret = $_ENV['WS_INTERNAL_SECRET'] ?? '';
 
 $httpServer = new ReactHttpServer(
-    new ReactServer("0.0.0.0:{$internalPort}", $loop),
     function (ServerRequestInterface $request) use ($wsApp, $internalSecret) {
 
-        // Only accept from localhost
         $remoteAddr = $request->getServerParams()['REMOTE_ADDR'] ?? '';
         if (!in_array($remoteAddr, ['127.0.0.1', '::1'], true)) {
             return new \React\Http\Message\Response(403, [], 'Forbidden');
         }
 
-        // Verify internal secret
         $secret = $request->getHeaderLine('X-Internal-Secret');
         if (!hash_equals($internalSecret, $secret)) {
             return new \React\Http\Message\Response(403, [], 'Forbidden');
@@ -415,6 +448,7 @@ $httpServer = new ReactHttpServer(
         );
     }
 );
+$httpServer->listen(new ReactServer("0.0.0.0:{$internalPort}", $loop));
 
 echo "[WS] Internal HTTP server started on port {$internalPort}\n";
 
