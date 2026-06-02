@@ -39,9 +39,9 @@ const VendorComponents = (() => {
         const toggle = Dom.el('div', { class: 'restaurant-toggle' });
         const label  = Dom.el('label', { class: 'restaurant-toggle__label' });
 
+        const isOpen = state.restaurants.current?.is_open || false;
         const checkbox = Dom.el('input', { type: 'checkbox' });
-        // Reflect current is_open from restaurant data
-        // In a full implementation this would come from state.restaurants.current
+        checkbox.checked = isOpen;
         checkbox.addEventListener('change', async (e) => {
             checkbox.disabled = true;
             try {

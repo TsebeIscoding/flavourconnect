@@ -60,6 +60,20 @@ class RestaurantService
         return ['restaurants' => $rows, 'pagination' => compact('page', 'limit', 'total')];
     }
 
+    public function findByVendor(string $vendorId): array
+    {
+        $r = $this->db->queryOne(
+            "SELECT * FROM restaurants WHERE vendor_id = :vid",
+            ['vid' => $vendorId]
+        );
+
+        if (!$r) {
+            throw new BusinessException('No restaurant found for this vendor', 404, 'RESOURCE_NOT_FOUND');
+        }
+
+        return $this->formatRestaurant($r);
+    }
+
     public function findById(string $id): array
     {
         $r = $this->db->queryOne(

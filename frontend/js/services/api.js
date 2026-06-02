@@ -20,6 +20,7 @@ const Api = (() => {
     // ── RESTAURANTS ──────────────────────────────────────────────
 
     const restaurants = {
+        mine:       ()            => Http.get('/restaurants/mine'),
         list:       (params = {}) => {
             const qs = new URLSearchParams(params).toString();
             return Http.get(`/restaurants${qs ? '?' + qs : ''}`);

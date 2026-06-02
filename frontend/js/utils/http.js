@@ -11,7 +11,7 @@
 
 const Http = (() => {
 
-    const BASE_URL = window.FC_CONFIG?.apiUrl || 'https://api.flavourconnect.com/v1';
+    const BASE_URL = window.FC_CONFIG?.apiUrl || ((location.hostname === 'localhost' || location.hostname === '127.0.0.1') ? 'http://localhost:8000/v1' : 'https://api.flavourconnect.com/v1');
     let isRefreshing = false;
     let refreshQueue = []; // Queued requests waiting for refresh
 

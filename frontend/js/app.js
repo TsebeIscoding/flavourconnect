@@ -14,9 +14,11 @@
 (async () => {
 
     // ── CONFIG ────────────────────────────────────────────────────
+    // ── Environment detection ─────────────────────────────────────
+    const isDev = location.hostname === 'localhost' || location.hostname === '127.0.0.1';
     window.FC_CONFIG = {
-        apiUrl: 'https://api.flavourconnect.com/v1',
-        wsUrl:  'wss://ws.flavourconnect.com',
+        apiUrl: isDev ? 'http://localhost:8000/v1'     : 'https://api.flavourconnect.com/v1',
+        wsUrl:  isDev ? 'ws://localhost:8080'           : 'wss://ws.flavourconnect.com',
     };
 
     // ── BOOT SEQUENCE ─────────────────────────────────────────────
@@ -208,9 +210,29 @@
                 break;
 
             case 'vendor-dashboard':
-            case 'vendor-menu':
                 if (role === 'vendor') {
                     Actions.loadOrders('vendor');
+                    // Load vendor's own restaurant so open/close toggle reflects real state
+                    Api.restaurants.mine().then(data => {
+                        if (data?.restaurant) {
+                            Store.dispatch('SET_RESTAURANT', data.restaurant);
+                        }
+                    }).catch(() => {});
+                }
+                break;
+
+            case 'vendor-menu':
+                if (role === 'vendor') {
+                    // Load vendor's own restaurant and its menu
+                    Api.restaurants.mine().then(data => {
+                        const restId = data?.restaurant?.id;
+                        if (restId) {
+                            Store.dispatch('SET_MENU_LOADING', true);
+                            Api.menu.list(restId).then(menuData => {
+                                Store.dispatch('SET_MENU', menuData.menu_items);
+                            });
+                        }
+                    }).catch(() => {});
                 }
                 break;
 

@@ -11,7 +11,7 @@
 
 const WsClient = (() => {
 
-    const WS_URL         = window.FC_CONFIG?.wsUrl || 'wss://ws.flavourconnect.com';
+    const WS_URL         = window.FC_CONFIG?.wsUrl || ((location.hostname === 'localhost' || location.hostname === '127.0.0.1') ? 'ws://localhost:8080' : 'wss://ws.flavourconnect.com');
     const PING_INTERVAL  = 30_000;  // 30 seconds
     const MAX_BACKOFF    = 30_000;  // 30 seconds max retry delay
     const MAX_RETRIES    = 10;
@@ -298,7 +298,7 @@ const WsClient = (() => {
         if (!rt) return;
 
         try {
-            const apiUrl = window.FC_CONFIG?.apiUrl || 'https://api.flavourconnect.com/v1';
+            const apiUrl = window.FC_CONFIG?.apiUrl || ((location.hostname === 'localhost' || location.hostname === '127.0.0.1') ? 'http://localhost:8000/v1' : 'https://api.flavourconnect.com/v1');
             const res  = await fetch(apiUrl + '/auth/refresh', {
                 method:  'POST',
                 headers: { 'Content-Type': 'application/json' },

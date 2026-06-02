@@ -14,6 +14,12 @@ class RestaurantController
         private ResponseHelper    $response
     ) {}
 
+    public function mine(array $params, ?array $claims): never
+    {
+        $restaurant = $this->restaurantService->findByVendor($claims['sub']);
+        $this->response->success(['restaurant' => $restaurant]);
+    }
+
     public function index(array $params, ?array $claims): never
     {
         $result = $this->restaurantService->list($_GET);

@@ -41,6 +41,7 @@ class Router
         $this->add('POST', '/auth/logout',   [AuthController::class, 'logout'],   auth: true);
 
         // ── Restaurants ───────────────────────────────────────
+        $this->add('GET',   '/restaurants/mine',   [RestaurantController::class, 'mine'],     auth: true, roles: ['vendor']);
         $this->add('GET',   '/restaurants',        [RestaurantController::class, 'index']);
         $this->add('GET',   '/restaurants/{id}',   [RestaurantController::class, 'show']);
         $this->add('PATCH', '/restaurants/{id}',   [RestaurantController::class, 'update'],    auth: true, roles: ['vendor', 'admin']);
