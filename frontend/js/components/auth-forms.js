@@ -1,139 +1,225 @@
 /**
  * FlavourConnect — Auth Form Components
  *
- * renderLogin()    — login form
- * renderRegister() — registration form
+ * HCI principles applied:
+ * - Field-level errors shown inline next to the offending field
+ * - Values preserved on submit failure — user never re-types correct fields
+ * - Live validation on blur (after user leaves a field)
+ * - Password strength meter with character count
+ * - Clear actionable error messages — tells user exactly what to fix
+ * - Loading state on button prevents double-submit
+ * - Server validation errors mapped back to individual fields
+ * - Enter key submits form from any field
+ * - First invalid field receives focus after failed submit
  */
 
 const AuthComponents = (() => {
 
-    // ── LOGIN ────────────────────────────────────────────────────
+    // ── PASSWORD RULES (must match backend Validator::rulePassword) ──────────
+    const PASSWORD_RULES = [
+        { test: v => v.length >= 8,           label: 'At least 8 characters'      },
+        { test: v => /[A-Z]/.test(v),         label: 'One uppercase letter'        },
+        { test: v => /[a-z]/.test(v),         label: 'One lowercase letter'        },
+        { test: v => /\d/.test(v),            label: 'One number'                  },
+        { test: v => /[\W_]/.test(v),         label: 'One special character (!@#$…)' },
+    ];
+
+    // ── LOGIN ────────────────────────────────────────────────────────────────
 
     function renderLogin(state) {
         const container = Dom.qs('#view-content');
         if (!container) return;
 
-        const { isLoading, error } = state.auth;
+        const { isLoading } = state.auth;
 
         const wrapper = Dom.el('div', { class: 'auth-page' });
         const card    = Dom.el('div', { class: 'auth-card' });
 
-        const heading = Dom.el('h1', { class: 'auth-card__heading' }, ['Welcome back']);
-        const subtext = Dom.el('p',  { class: 'auth-card__subtext' }, ['Sign in to your FlavourConnect account']);
+        card.appendChild(Dom.el('h1', { class: 'auth-card__heading' }, ['Welcome back']));
+        card.appendChild(Dom.el('p',  { class: 'auth-card__subtext' }, ['Sign in to your FlavourConnect account']));
 
-        card.appendChild(heading);
-        card.appendChild(subtext);
+        // Fields — build with refs so we can read values after failed submit
+        const emailField    = buildInputField({
+            id:          'login-email',
+            label:       'Email address',
+            type:        'email',
+            autocomplete:'email',
+            placeholder: 'you@example.com',
+            hint:        null,
+        });
 
-        // Error message
-        if (error) {
-            const errDiv = Dom.el('div', { class: 'alert alert--error', role: 'alert' });
-            errDiv.textContent = error;
-            card.appendChild(errDiv);
-        }
+        const passwordField = buildInputField({
+            id:          'login-password',
+            label:       'Password',
+            type:        'password',
+            autocomplete:'current-password',
+            placeholder: '',
+            hint:        null,
+            showToggle:  true,
+        });
 
-        // Form fields
-        const emailField    = buildField('email',    'Email address', 'email',    'email', 'you@example.com');
-        const passwordField = buildField('password', 'Password',      'password', 'current-password');
-
-        const emailInput    = Dom.qs('input', emailField);
-        const passwordInput = Dom.qs('input', passwordField);
-
-        // Submit
         const submitBtn = Dom.el('button', {
             class:    'btn btn--primary btn--full',
             disabled: isLoading,
         }, [isLoading ? 'Signing in…' : 'Sign In']);
 
-        submitBtn.addEventListener('click', async () => {
-            clearFieldErrors(card);
-            const email    = emailInput.value.trim();
-            const password = passwordInput.value;
+        const submit = async () => {
+            clearAllErrors(card);
 
-            if (!email || !password) {
-                showInlineError(submitBtn, 'Please fill in all fields.');
+            const email    = emailField.input.value.trim();
+            const password = passwordField.input.value;
+            let firstError = null;
+
+            // Client-side validation before hitting the server
+            if (!email) {
+                setFieldError(emailField, 'Email address is required');
+                firstError = firstError || emailField.input;
+            } else if (!isValidEmail(email)) {
+                setFieldError(emailField, 'Enter a valid email address (e.g. you@example.com)');
+                firstError = firstError || emailField.input;
+            }
+
+            if (!password) {
+                setFieldError(passwordField, 'Password is required');
+                firstError = firstError || passwordField.input;
+            }
+
+            if (firstError) {
+                firstError.focus();
                 return;
             }
 
             submitBtn.disabled    = true;
             submitBtn.textContent = 'Signing in…';
 
-            const ok = await Actions.login(email, password);
-
-            if (!ok) {
+            try {
+                const ok = await Actions.login(email, password);
+                if (!ok) {
+                    // Map server error to field
+                    const authError = Store.get('auth').error;
+                    if (authError && authError.toLowerCase().includes('password')) {
+                        setFieldError(passwordField, 'Incorrect password. Try again.');
+                        passwordField.input.focus();
+                        passwordField.input.select();
+                    } else if (authError && authError.toLowerCase().includes('email')) {
+                        setFieldError(emailField, 'No account found with this email.');
+                        emailField.input.focus();
+                    } else {
+                        setFieldError(emailField, authError || 'Sign in failed. Please try again.');
+                    }
+                    submitBtn.disabled    = false;
+                    submitBtn.textContent = 'Sign In';
+                }
+            } catch {
+                setFormError(card, 'Could not connect to the server. Check your connection.');
                 submitBtn.disabled    = false;
                 submitBtn.textContent = 'Sign In';
             }
+        };
+
+        submitBtn.addEventListener('click', submit);
+        [emailField.input, passwordField.input].forEach(input => {
+            input.addEventListener('keydown', e => { if (e.key === 'Enter') submit(); });
         });
 
-        // Enter key support
-        [emailInput, passwordInput].forEach(input => {
-            input.addEventListener('keydown', (e) => {
-                if (e.key === 'Enter') submitBtn.click();
-            });
+        // Live blur validation
+        emailField.input.addEventListener('blur', () => {
+            const v = emailField.input.value.trim();
+            if (v && !isValidEmail(v)) setFieldError(emailField, 'Enter a valid email address');
+            else clearFieldError(emailField);
         });
 
-        card.appendChild(emailField);
-        card.appendChild(passwordField);
+        card.appendChild(emailField.wrapper);
+        card.appendChild(passwordField.wrapper);
         card.appendChild(submitBtn);
 
-        // Register link
         const switchLink = Dom.el('p', { class: 'auth-card__switch' });
-        const linkText   = document.createTextNode("Don't have an account? ");
-        const link       = Dom.el('button', { class: 'btn btn--link' }, ['Create one']);
+        switchLink.appendChild(document.createTextNode("Don't have an account? "));
+        const link = Dom.el('button', { class: 'btn btn--link' }, ['Create one']);
         link.addEventListener('click', () => Store.dispatch('NAVIGATE', { view: 'register' }));
-        switchLink.appendChild(linkText);
         switchLink.appendChild(link);
         card.appendChild(switchLink);
 
         wrapper.appendChild(card);
         Dom.render(container, wrapper);
-
-        // Focus first field
-        emailInput.focus();
+        emailField.input.focus();
     }
 
-    // ── REGISTER ────────────────────────────────────────────────
+    // ── REGISTER ────────────────────────────────────────────────────────────
 
     function renderRegister(state) {
         const container = Dom.qs('#view-content');
         if (!container) return;
 
-        const { isLoading, error } = state.auth;
+        const { isLoading } = state.auth;
 
         const wrapper = Dom.el('div', { class: 'auth-page' });
         const card    = Dom.el('div', { class: 'auth-card' });
 
-        const heading = Dom.el('h1', { class: 'auth-card__heading' }, ['Create Account']);
-        card.appendChild(heading);
+        card.appendChild(Dom.el('h1', { class: 'auth-card__heading' }, ['Create Account']));
 
-        if (error) {
-            const errDiv = Dom.el('div', { class: 'alert alert--error', role: 'alert' });
-            errDiv.textContent = error;
-            card.appendChild(errDiv);
-        }
-
-        const nameField     = buildField('full_name', 'Full Name',      'text',     'name',             'Jane Doe');
-        const emailField    = buildField('email',     'Email Address',  'email',    'email',             'you@example.com');
-        const passwordField = buildField('password',  'Password',       'password', 'new-password');
-        const phoneField    = buildField('phone',     'Phone Number',   'tel',      'tel',               '+1234567890');
-
-        // Role selector
-        const roleField    = Dom.el('div', { class: 'form-field' });
-        const roleLabel    = Dom.el('label', { class: 'form-label', for: 'role-select' }, ['I want to…']);
-        const roleSelect   = Dom.el('select', { id: 'role-select', class: 'form-select' });
-
-        const roleOptions = [
-            { value: 'customer', label: 'Order food (Customer)' },
-            { value: 'vendor',   label: 'List my restaurant (Vendor)' },
-            { value: 'driver',   label: 'Deliver food (Driver)' },
-        ];
-        roleOptions.forEach(({ value, label }) => {
-            const opt = Dom.el('option', { value }, [label]);
-            roleSelect.appendChild(opt);
+        const nameField  = buildInputField({
+            id:          'reg-name',
+            label:       'Full Name',
+            type:        'text',
+            autocomplete:'name',
+            placeholder: 'Jane Doe',
+            hint:        'Your real name as it will appear to restaurants and drivers',
         });
 
-        // Show/hide phone requirement note for drivers
-        const phoneNote = Dom.el('p', { class: 'form-note', hidden: true }, ['Phone number is required for drivers.']);
+        const emailField = buildInputField({
+            id:          'reg-email',
+            label:       'Email Address',
+            type:        'email',
+            autocomplete:'email',
+            placeholder: 'you@example.com',
+            hint:        null,
+        });
+
+        const passwordField = buildInputField({
+            id:          'reg-password',
+            label:       'Password',
+            type:        'password',
+            autocomplete:'new-password',
+            placeholder: '',
+            hint:        null,
+            showToggle:  true,
+        });
+
+        // Password strength meter
+        const strengthMeter = buildPasswordStrengthMeter();
+        passwordField.wrapper.appendChild(strengthMeter.el);
+
+        passwordField.input.addEventListener('input', () => {
+            strengthMeter.update(passwordField.input.value);
+            // Live clear error as user types
+            if (passwordField.input.value.length > 0) clearFieldError(passwordField);
+        });
+
+        const phoneField = buildInputField({
+            id:          'reg-phone',
+            label:       'Phone Number',
+            type:        'tel',
+            autocomplete:'tel',
+            placeholder: '+27821234567',
+            hint:        'Required for drivers. Optional for customers and vendors.',
+        });
+
+        // Role selector
+        const roleField  = Dom.el('div', { class: 'form-field' });
+        const roleLabel  = Dom.el('label', { class: 'form-label', for: 'role-select' }, ['I want to…']);
+        const roleSelect = Dom.el('select', { id: 'role-select', class: 'form-select' });
+
+        [
+            { value: 'customer', label: 'Order food  (Customer)'         },
+            { value: 'vendor',   label: 'List my restaurant  (Vendor)'   },
+            { value: 'driver',   label: 'Deliver food  (Driver)'         },
+        ].forEach(({ value, label }) => {
+            roleSelect.appendChild(Dom.el('option', { value }, [label]));
+        });
+
+        const phoneNote = Dom.el('p', { class: 'form-note form-note--warning', hidden: true },
+            ['⚠ Phone number is required for driver accounts.']);
         roleSelect.addEventListener('change', () => {
             phoneNote.hidden = roleSelect.value !== 'driver';
         });
@@ -143,46 +229,125 @@ const AuthComponents = (() => {
         roleField.appendChild(phoneNote);
 
         const submitBtn = Dom.el('button', {
-            class:    'btn btn--primary btn--full',
+            class:   'btn btn--primary btn--full',
             disabled: isLoading,
         }, [isLoading ? 'Creating account…' : 'Create Account']);
 
-        submitBtn.addEventListener('click', async () => {
-            clearFieldErrors(card);
+        const submit = async () => {
+            clearAllErrors(card);
 
             const formData = {
-                full_name: Dom.qs('input', nameField).value.trim(),
-                email:     Dom.qs('input', emailField).value.trim(),
-                password:  Dom.qs('input', passwordField).value,
-                phone:     Dom.qs('input', phoneField).value.trim() || null,
+                full_name: nameField.input.value.trim(),
+                email:     emailField.input.value.trim(),
+                password:  passwordField.input.value,
+                phone:     phoneField.input.value.trim() || null,
                 role:      roleSelect.value,
             };
 
-            if (!formData.full_name || !formData.email || !formData.password) {
-                showInlineError(submitBtn, 'Please fill in all required fields.');
+            let firstError = null;
+
+            // Validate each field individually
+            if (!formData.full_name) {
+                setFieldError(nameField, 'Full name is required');
+                firstError = firstError || nameField.input;
+            } else if (formData.full_name.length < 2) {
+                setFieldError(nameField, 'Name must be at least 2 characters');
+                firstError = firstError || nameField.input;
+            }
+
+            if (!formData.email) {
+                setFieldError(emailField, 'Email address is required');
+                firstError = firstError || emailField.input;
+            } else if (!isValidEmail(formData.email)) {
+                setFieldError(emailField, 'Enter a valid email address (e.g. you@example.com)');
+                firstError = firstError || emailField.input;
+            }
+
+            const passwordErrors = validatePassword(formData.password);
+            if (passwordErrors.length > 0) {
+                setFieldError(passwordField,
+                    'Password must have: ' + passwordErrors.join(', '));
+                firstError = firstError || passwordField.input;
+            }
+
+            if (formData.role === 'driver' && !formData.phone) {
+                setFieldError(phoneField, 'Phone number is required for driver accounts');
+                firstError = firstError || phoneField.input;
+            }
+
+            if (firstError) {
+                firstError.focus();
                 return;
             }
 
             submitBtn.disabled    = true;
             submitBtn.textContent = 'Creating account…';
 
-            const ok = await Actions.register(formData);
+            try {
+                const ok = await Actions.register(formData);
 
-            if (!ok) {
+                if (!ok) {
+                    const authError = Store.get('auth').error;
+
+                    // Map server validation errors back to specific fields
+                    if (authError) {
+                        if (authError.toLowerCase().includes('email')) {
+                            setFieldError(emailField, 'An account with this email already exists. Sign in instead?');
+                            emailField.input.focus();
+                        } else if (authError.toLowerCase().includes('phone')) {
+                            setFieldError(phoneField, 'Phone number is invalid or too long (max 20 characters)');
+                            phoneField.input.focus();
+                        } else if (authError.toLowerCase().includes('password')) {
+                            setFieldError(passwordField, authError);
+                            passwordField.input.focus();
+                        } else {
+                            setFormError(card, authError);
+                        }
+                    }
+
+                    submitBtn.disabled    = false;
+                    submitBtn.textContent = 'Create Account';
+                }
+            } catch {
+                setFormError(card, 'Could not connect to the server. Check your connection and try again.');
                 submitBtn.disabled    = false;
                 submitBtn.textContent = 'Create Account';
             }
+        };
+
+        submitBtn.addEventListener('click', submit);
+        [nameField.input, emailField.input, passwordField.input, phoneField.input].forEach(input => {
+            input.addEventListener('keydown', e => { if (e.key === 'Enter') submit(); });
         });
 
-        card.appendChild(nameField);
-        card.appendChild(emailField);
-        card.appendChild(passwordField);
-        card.appendChild(phoneField);
+        // Live blur validation per field
+        emailField.input.addEventListener('blur', () => {
+            const v = emailField.input.value.trim();
+            if (v && !isValidEmail(v)) setFieldError(emailField, 'Enter a valid email address');
+            else clearFieldError(emailField);
+        });
+
+        nameField.input.addEventListener('blur', () => {
+            const v = nameField.input.value.trim();
+            if (v && v.length < 2) setFieldError(nameField, 'Name must be at least 2 characters');
+            else clearFieldError(nameField);
+        });
+
+        phoneField.input.addEventListener('blur', () => {
+            const v = phoneField.input.value.trim();
+            if (v && v.length > 20) setFieldError(phoneField, 'Phone number must be 20 characters or fewer');
+            else clearFieldError(phoneField);
+        });
+
+        card.appendChild(nameField.wrapper);
+        card.appendChild(emailField.wrapper);
+        card.appendChild(passwordField.wrapper);
+        card.appendChild(phoneField.wrapper);
         card.appendChild(roleField);
         card.appendChild(submitBtn);
 
         const switchLink = Dom.el('p', { class: 'auth-card__switch' });
-        const link       = Dom.el('button', { class: 'btn btn--link' }, ['Sign in instead']);
+        const link = Dom.el('button', { class: 'btn btn--link' }, ['Sign in instead']);
         link.addEventListener('click', () => Store.dispatch('NAVIGATE', { view: 'login' }));
         switchLink.appendChild(document.createTextNode('Already have an account? '));
         switchLink.appendChild(link);
@@ -190,37 +355,172 @@ const AuthComponents = (() => {
 
         wrapper.appendChild(card);
         Dom.render(container, wrapper);
-
-        Dom.qs('input', nameField).focus();
+        nameField.input.focus();
     }
 
-    // ── HELPERS ──────────────────────────────────────────────────
+    // ── FIELD BUILDER ────────────────────────────────────────────────────────
 
-    function buildField(name, labelText, type, autocomplete, placeholder = '') {
-        const field = Dom.el('div', { class: 'form-field' });
-        const label = Dom.el('label', { class: 'form-label', for: `field-${name}` }, [labelText]);
-        const input = Dom.el('input', {
+    function buildInputField({ id, label, type, autocomplete, placeholder, hint, showToggle = false }) {
+        const wrapper   = Dom.el('div', { class: 'form-field' });
+        const labelEl   = Dom.el('label', { class: 'form-label', for: id }, [label]);
+
+        const inputWrap = Dom.el('div', { class: 'form-input-wrap' });
+        const input     = Dom.el('input', {
             type,
-            id:           `field-${name}`,
+            id,
             class:        'form-input',
             autocomplete,
             placeholder,
-            maxlength:    type === 'password' ? '128' : '255',
+            maxlength:    type === 'password' ? '128' : type === 'tel' ? '20' : '255',
         });
-        field.appendChild(label);
-        field.appendChild(input);
-        return field;
+
+        inputWrap.appendChild(input);
+
+        // Password show/hide toggle
+        if (showToggle) {
+            const toggle = Dom.el('button', {
+                type:  'button',
+                class: 'form-input__toggle',
+                'aria-label': 'Show password',
+            }, ['Show']);
+            toggle.addEventListener('click', () => {
+                const isHidden = input.type === 'password';
+                input.type         = isHidden ? 'text' : 'password';
+                toggle.textContent = isHidden ? 'Hide' : 'Show';
+                toggle.setAttribute('aria-label', isHidden ? 'Hide password' : 'Show password');
+            });
+            inputWrap.appendChild(toggle);
+        }
+
+        // Character counter for password
+        if (type === 'password') {
+            const counter = Dom.el('span', { class: 'form-input__counter', 'aria-live': 'polite' }, ['0/128']);
+            input.addEventListener('input', () => {
+                counter.textContent = `${input.value.length}/128`;
+            });
+            inputWrap.appendChild(counter);
+        }
+
+        const errorEl = Dom.el('p', {
+            class:      'form-field__error',
+            role:       'alert',
+            'aria-live':'polite',
+        });
+        errorEl.hidden = true;
+
+        wrapper.appendChild(labelEl);
+        wrapper.appendChild(inputWrap);
+
+        if (hint) {
+            const hintEl = Dom.el('p', { class: 'form-field__hint' }, [hint]);
+            wrapper.appendChild(hintEl);
+        }
+
+        wrapper.appendChild(errorEl);
+
+        return { wrapper, input, errorEl, label };
     }
 
-    function showInlineError(insertBefore, message) {
-        const existing = insertBefore.parentNode.querySelector('.form-error--inline');
+    // ── PASSWORD STRENGTH METER ──────────────────────────────────────────────
+
+    function buildPasswordStrengthMeter() {
+        const el        = Dom.el('div', { class: 'password-strength' });
+        const bar       = Dom.el('div', { class: 'password-strength__bar' });
+        const fill      = Dom.el('div', { class: 'password-strength__fill' });
+        const rulesList = Dom.el('ul',  { class: 'password-strength__rules' });
+
+        bar.appendChild(fill);
+        el.appendChild(bar);
+
+        PASSWORD_RULES.forEach(rule => {
+            const li   = Dom.el('li', { class: 'password-rule password-rule--unmet' });
+            const icon = Dom.el('span', { class: 'password-rule__icon' }, ['✗']);
+            const text = Dom.el('span', { class: 'password-rule__text' }, [rule.label]);
+            li.appendChild(icon);
+            li.appendChild(text);
+            rulesList.appendChild(li);
+        });
+
+        el.appendChild(rulesList);
+
+        function update(value) {
+            const items = rulesList.querySelectorAll('.password-rule');
+            let passed  = 0;
+
+            PASSWORD_RULES.forEach((rule, i) => {
+                const met  = value.length > 0 && rule.test(value);
+                const item = items[i];
+                const icon = item.querySelector('.password-rule__icon');
+                item.className = `password-rule ${met ? 'password-rule--met' : 'password-rule--unmet'}`;
+                icon.textContent = met ? '✓' : '✗';
+                if (met) passed++;
+            });
+
+            // Update bar width and colour
+            const pct    = value.length === 0 ? 0 : Math.round((passed / PASSWORD_RULES.length) * 100);
+            fill.style.width = pct + '%';
+
+            fill.className = 'password-strength__fill';
+            if (passed === 0 || value.length === 0) fill.classList.add('password-strength__fill--empty');
+            else if (passed <= 2)                   fill.classList.add('password-strength__fill--weak');
+            else if (passed <= 4)                   fill.classList.add('password-strength__fill--fair');
+            else                                    fill.classList.add('password-strength__fill--strong');
+        }
+
+        return { el, update };
+    }
+
+    // ── ERROR HELPERS ────────────────────────────────────────────────────────
+
+    function setFieldError(field, message) {
+        field.input.classList.add('form-input--error');
+        field.input.setAttribute('aria-invalid', 'true');
+        field.errorEl.textContent = message;
+        field.errorEl.hidden      = false;
+    }
+
+    function clearFieldError(field) {
+        field.input.classList.remove('form-input--error');
+        field.input.removeAttribute('aria-invalid');
+        field.errorEl.textContent = '';
+        field.errorEl.hidden      = true;
+    }
+
+    function clearAllErrors(card) {
+        card.querySelectorAll('.form-input--error').forEach(el => {
+            el.classList.remove('form-input--error');
+            el.removeAttribute('aria-invalid');
+        });
+        card.querySelectorAll('.form-field__error').forEach(el => {
+            el.textContent = '';
+            el.hidden = true;
+        });
+        card.querySelectorAll('.form-error--form').forEach(el => el.remove());
+    }
+
+    function setFormError(card, message) {
+        const existing = card.querySelector('.form-error--form');
         if (existing) existing.remove();
-        const err = Dom.el('p', { class: 'form-error form-error--inline', role: 'alert' }, [message]);
-        insertBefore.parentNode.insertBefore(err, insertBefore);
+        const err = Dom.el('div', {
+            class: 'alert alert--error form-error--form',
+            role:  'alert',
+        }, [message]);
+        // Insert before the first field
+        const firstField = card.querySelector('.form-field');
+        card.insertBefore(err, firstField);
     }
 
-    function clearFieldErrors(container) {
-        Dom.qsa('.form-error--inline', container).forEach(e => e.remove());
+    // ── VALIDATORS ───────────────────────────────────────────────────────────
+
+    function isValidEmail(email) {
+        return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+    }
+
+    function validatePassword(password) {
+        if (!password) return ['at least 8 characters', 'uppercase letter', 'lowercase letter', 'number', 'special character'];
+        return PASSWORD_RULES
+            .filter(rule => !rule.test(password))
+            .map(rule => rule.label.toLowerCase());
     }
 
     return Object.freeze({ renderLogin, renderRegister });
