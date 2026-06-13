@@ -299,6 +299,13 @@ const Actions = (() => {
     }
 
     function showToast(message, type = 'info') {
+        // Suppress network connection errors in dev — they appear when
+        // services restart and are not actionable by the user
+        const isDev = location.hostname === 'localhost' || location.hostname === '127.0.0.1';
+        if (isDev && message.includes('Network error')) {
+            console.warn('[FC] Network error suppressed in dev:', message);
+            return;
+        }
         Store.dispatch('SHOW_TOAST', { message, type });
         // Auto-hide after 4 seconds
         setTimeout(() => Store.dispatch('HIDE_TOAST'), 4000);

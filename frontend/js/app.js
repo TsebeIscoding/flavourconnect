@@ -67,6 +67,9 @@
     });
     Store.subscribe('notifications', renderNotifications);
 
+    // Seed history with home so back button works from the first navigation
+    Store.dispatch('NAV_SEED_HOME');
+
     // Initial render
     const initialState = Store.getState();
     NavComponents.renderNav(initialState);

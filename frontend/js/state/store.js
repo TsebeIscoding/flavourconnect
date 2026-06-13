@@ -159,6 +159,12 @@ const Store = (() => {
             state.ui.cartOpen     = false;
             state.ui.modalOpen    = false;
         },
+        NAV_SEED_HOME: (state) => {
+            // Push home as the base history entry if history is empty
+            if (state.nav.history.length === 0) {
+                state.nav.history.push({ view: 'home', params: {} });
+            }
+        },
         NAV_BACK: (state) => {
             if (state.nav.history.length === 0) return;
             const prev = state.nav.history.pop();

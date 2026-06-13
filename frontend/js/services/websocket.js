@@ -36,7 +36,8 @@ const WsClient = (() => {
         try {
             socket = new WebSocket(url);
         } catch (err) {
-            console.error('[WS] Failed to create WebSocket:', err);
+            // Silent — WS unavailable in dev is non-fatal
+            console.warn('[WS] Could not create WebSocket:', err.message);
             scheduleReconnect();
             return;
         }
@@ -104,8 +105,8 @@ const WsClient = (() => {
     }
 
     function handleError(err) {
-        console.error('[WS] Error:', err);
-        // onclose will fire after onerror — reconnect happens there
+        // Suppress — onclose fires after onerror and handles reconnect
+        console.warn('[WS] Connection error (non-fatal in dev)');
     }
 
     // ── EVENT ROUTER ─────────────────────────────────────────────
