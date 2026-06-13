@@ -321,9 +321,8 @@
     });
 
     window.addEventListener('popstate', (e) => {
-        if (e.state?.view) {
-            Store.dispatch('NAVIGATE', { view: e.state.view, params: e.state.params || {} });
-        }
+        // Use NAV_BACK so the in-app history stack stays in sync
+        Store.dispatch('NAV_BACK');
     });
 
 })();

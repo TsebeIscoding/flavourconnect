@@ -7,6 +7,9 @@
 
 const NavComponents = (() => {
 
+    // Views where back button should NOT appear
+    const NO_BACK_VIEWS = new Set(['home', 'vendor-dashboard', 'driver-dashboard', 'admin-dashboard']);
+
     function renderNav(state) {
         const { auth, nav, cart } = state;
         const isLoggedIn = !!auth.user;
@@ -20,9 +23,58 @@ const NavComponents = (() => {
 
         Dom.render(navEl,
             buildNavBrand(),
+            buildBackButton(nav),
             buildNavLinks(isLoggedIn, role, nav.currentView),
             buildNavActions(isLoggedIn, role, cart)
         );
+    }
+
+    function buildBackButton(nav) {
+        const wrapper = Dom.el('div', { class: 'nav__back-wrapper' });
+
+        // Don't show on root views or when there's no history
+        if (NO_BACK_VIEWS.has(nav.currentView) || nav.history.length === 0) {
+            return wrapper; // empty div
+        }
+
+        const btn = Dom.el('button', {
+            class:      'nav__back-btn',
+            'aria-label': 'Go back',
+        });
+
+        // Arrow + previous view label
+        const arrow = Dom.el('span', { class: 'nav__back-arrow' }, ['←']);
+        const label = Dom.el('span', { class: 'nav__back-label' }, [
+            formatViewName(nav.history[nav.history.length - 1]?.view || 'Back')
+        ]);
+
+        btn.appendChild(arrow);
+        btn.appendChild(label);
+
+        btn.addEventListener('click', () => {
+            Store.dispatch('NAV_BACK');
+        });
+
+        wrapper.appendChild(btn);
+        return wrapper;
+    }
+
+    function formatViewName(view) {
+        const names = {
+            'home':             'Home',
+            'restaurant':       'Restaurants',
+            'orders':           'Orders',
+            'order-detail':     'Order',
+            'checkout':         'Checkout',
+            'login':            'Sign In',
+            'register':         'Register',
+            'vendor-dashboard': 'Dashboard',
+            'vendor-menu':      'Menu',
+            'driver-dashboard': 'Dashboard',
+            'admin-dashboard':  'Dashboard',
+            'profile':          'Profile',
+        };
+        return names[view] || 'Back';
     }
 
     function buildNavBrand() {

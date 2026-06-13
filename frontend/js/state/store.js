@@ -26,6 +26,7 @@ const Store = (() => {
         nav: {
             currentView:  'home',  // home|login|register|restaurants|cart|orders|vendor|driver|admin
             params:       {},      // { restaurantId, orderId, ... }
+            history:      [],      // stack of previous views for back button
         },
 
         // Restaurants
@@ -142,8 +143,27 @@ const Store = (() => {
 
         // Navigation
         NAVIGATE: (state, { view, params = {} }) => {
+            // Push current view to history before navigating
+            if (state.nav.currentView !== view) {
+                state.nav.history.push({
+                    view:   state.nav.currentView,
+                    params: state.nav.params,
+                });
+                // Cap history at 20 entries
+                if (state.nav.history.length > 20) {
+                    state.nav.history.shift();
+                }
+            }
             state.nav.currentView = view;
             state.nav.params      = params;
+            state.ui.cartOpen     = false;
+            state.ui.modalOpen    = false;
+        },
+        NAV_BACK: (state) => {
+            if (state.nav.history.length === 0) return;
+            const prev = state.nav.history.pop();
+            state.nav.currentView = prev.view;
+            state.nav.params      = prev.params;
             state.ui.cartOpen     = false;
             state.ui.modalOpen    = false;
         },
