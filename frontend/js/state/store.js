@@ -20,6 +20,8 @@ const Store = (() => {
             accessToken:  null,
             isLoading:    false,
             error:        null,
+            fieldErrors:  null,    // { fieldName: ["error message", ...] }
+            errorCode:    null,    // e.g. CONFLICT_EMAIL_EXISTS, AUTH_INVALID_CREDENTIALS
         },
 
         // Navigation
@@ -127,7 +129,16 @@ const Store = (() => {
             state.auth.isLoading = payload;
         },
         SET_AUTH_ERROR: (state, payload) => {
-            state.auth.error = payload;
+            // payload can be a string (legacy) or { message, fields, code }
+            if (typeof payload === 'string') {
+                state.auth.error       = payload;
+                state.auth.fieldErrors = null;
+                state.auth.errorCode   = null;
+            } else {
+                state.auth.error       = payload.message || null;
+                state.auth.fieldErrors = payload.fields  || null;
+                state.auth.errorCode   = payload.code     || null;
+            }
             state.auth.isLoading = false;
         },
         SET_USER: (state, { user, accessToken }) => {
@@ -135,6 +146,8 @@ const Store = (() => {
             state.auth.accessToken = accessToken;
             state.auth.isLoading   = false;
             state.auth.error       = null;
+            state.auth.fieldErrors = null;
+            state.auth.errorCode   = null;
         },
         CLEAR_USER: (state) => {
             state.auth.user        = null;

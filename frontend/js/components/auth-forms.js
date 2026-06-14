@@ -95,17 +95,25 @@ const AuthComponents = (() => {
             try {
                 const ok = await Actions.login(email, password);
                 if (!ok) {
-                    // Map server error to field
-                    const authError = Store.get('auth').error;
-                    if (authError && authError.toLowerCase().includes('password')) {
-                        setFieldError(passwordField, 'Incorrect password. Try again.');
+                    const authState = Store.get('auth');
+                    const errorCode = authState.errorCode;
+                    const fields    = authState.fieldErrors;
+
+                    if (fields) {
+                        applyFieldErrors({ email: emailField, password: passwordField }, fields);
+                        const firstBad = fields.email ? emailField : passwordField;
+                        firstBad.input.focus();
+                    } else if (errorCode === 'AUTH_INVALID_CREDENTIALS') {
+                        // Generic credential failure — backend deliberately doesn't reveal
+                        // whether email or password was wrong (security). Show on password
+                        // field since that's most often the mistake, but clarify in message.
+                        setFieldError(passwordField, 'Email or password is incorrect. Please check both and try again.');
                         passwordField.input.focus();
                         passwordField.input.select();
-                    } else if (authError && authError.toLowerCase().includes('email')) {
-                        setFieldError(emailField, 'No account found with this email.');
-                        emailField.input.focus();
+                    } else if (errorCode === 'AUTH_ACCOUNT_INACTIVE') {
+                        setFormError(card, 'This account has been deactivated. Contact support for help.');
                     } else {
-                        setFieldError(emailField, authError || 'Sign in failed. Please try again.');
+                        setFormError(card, authState.error || 'Sign in failed. Please try again.');
                     }
                     submitBtn.disabled    = false;
                     submitBtn.textContent = 'Sign In';
@@ -287,22 +295,32 @@ const AuthComponents = (() => {
                 const ok = await Actions.register(formData);
 
                 if (!ok) {
-                    const authError = Store.get('auth').error;
+                    const authState = Store.get('auth');
+                    const errorCode = authState.errorCode;
+                    const fields    = authState.fieldErrors;
 
-                    // Map server validation errors back to specific fields
-                    if (authError) {
-                        if (authError.toLowerCase().includes('email')) {
-                            setFieldError(emailField, 'An account with this email already exists. Sign in instead?');
-                            emailField.input.focus();
-                        } else if (authError.toLowerCase().includes('phone')) {
-                            setFieldError(phoneField, 'Phone number is invalid or too long (max 20 characters)');
-                            phoneField.input.focus();
-                        } else if (authError.toLowerCase().includes('password')) {
-                            setFieldError(passwordField, authError);
-                            passwordField.input.focus();
-                        } else {
-                            setFormError(card, authError);
-                        }
+                    const fieldMap = {
+                        email:     emailField,
+                        password:  passwordField,
+                        full_name: nameField,
+                        phone:     phoneField,
+                    };
+
+                    let firstBad = null;
+
+                    if (fields) {
+                        firstBad = applyFieldErrors(fieldMap, fields);
+                    }
+
+                    if (errorCode === 'CONFLICT_EMAIL_EXISTS') {
+                        setFieldError(emailField, 'An account with this email already exists. Sign in instead, or use a different email.');
+                        firstBad = firstBad || emailField;
+                    }
+
+                    if (!firstBad) {
+                        setFormError(card, authState.error || 'Registration failed. Please check your details and try again.');
+                    } else {
+                        firstBad.input.focus();
                     }
 
                     submitBtn.disabled    = false;
@@ -471,6 +489,73 @@ const AuthComponents = (() => {
     }
 
     // ── ERROR HELPERS ────────────────────────────────────────────────────────
+
+    /**
+     * Applies backend validation errors to their matching fields.
+     * Returns the first field object that received an error, or null.
+     *
+     * @param {object} fieldMap - { backendFieldName: fieldObject }
+     * @param {object} fields   - { backendFieldName: ["error msg", ...] }
+     */
+    function applyFieldErrors(fieldMap, fields) {
+        let first = null;
+        for (const [name, messages] of Object.entries(fields)) {
+            const field = fieldMap[name];
+            if (!field || !messages || messages.length === 0) continue;
+
+            // Rewrite backend's raw message into a friendlier, more specific one
+            const friendly = friendlyFieldMessage(name, messages[0]);
+            setFieldError(field, friendly);
+
+            if (!first) first = field;
+        }
+        return first;
+    }
+
+    /**
+     * Converts backend validation messages (e.g. "password must be at least
+     * 8 characters with uppercase, lowercase, number, and special character")
+     * into clearer, more actionable copy for the user.
+     */
+    function friendlyFieldMessage(fieldName, rawMessage) {
+        const msg = rawMessage.toLowerCase();
+
+        if (fieldName === 'password') {
+            if (msg.includes('at least 8')) {
+                return 'Password must be at least 8 characters and include an uppercase letter, lowercase letter, number, and special character (e.g. ! @ # $).';
+            }
+        }
+
+        if (fieldName === 'phone') {
+            if (msg.includes('exceed') || msg.includes('30')) {
+                return 'Phone number is too long. Use up to 20 characters, including the country code (e.g. +27821234567).';
+            }
+            if (msg.includes('required')) {
+                return 'Phone number is required for driver accounts.';
+            }
+        }
+
+        if (fieldName === 'email') {
+            if (msg.includes('valid email')) {
+                return 'Enter a valid email address (e.g. you@example.com).';
+            }
+            if (msg.includes('required')) {
+                return 'Email address is required.';
+            }
+        }
+
+        if (fieldName === 'full_name') {
+            if (msg.includes('at least 2')) {
+                return 'Full name must be at least 2 characters.';
+            }
+            if (msg.includes('required')) {
+                return 'Full name is required.';
+            }
+        }
+
+        // Fallback — capitalize and return the raw message
+        return rawMessage.charAt(0).toUpperCase() + rawMessage.slice(1);
+    }
 
     function setFieldError(field, message) {
         field.input.classList.add('form-input--error');

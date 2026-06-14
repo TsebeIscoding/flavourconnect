@@ -120,7 +120,11 @@ const Actions = (() => {
             navigateByRole(data.user.role);
             return true;
         } catch (err) {
-            Store.dispatch('SET_AUTH_ERROR', err.message);
+            Store.dispatch('SET_AUTH_ERROR', {
+                message: err.message,
+                fields:  err.fields || null,
+                code:    err.code   || null,
+            });
             return false;
         }
     }
@@ -137,7 +141,11 @@ const Actions = (() => {
             navigateByRole(data.user.role);
             return true;
         } catch (err) {
-            Store.dispatch('SET_AUTH_ERROR', err.message);
+            Store.dispatch('SET_AUTH_ERROR', {
+                message: err.message,
+                fields:  err.fields || null,
+                code:    err.code   || null,
+            });
             return false;
         }
     }
