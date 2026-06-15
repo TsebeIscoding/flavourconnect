@@ -200,6 +200,11 @@ const OrderComponents = (() => {
         infoCard.appendChild(addressRow);
         infoCard.appendChild(timeRow);
 
+        // Driver info — shown once a driver has been assigned
+        if (order.driver_name && ['out_for_delivery', 'delivered'].includes(order.status)) {
+            infoCard.appendChild(buildDriverInfo(order));
+        }
+
         // Items
         const itemsCard = Dom.el('div', { class: 'order-detail__items-card' });
         const itemsHeading = Dom.el('h2', {}, ['Items']);
@@ -339,6 +344,29 @@ const OrderComponents = (() => {
         }
 
         return pag;
+    }
+
+    function buildDriverInfo(order) {
+        const row = Dom.el('div', { class: 'info-row driver-info-row' });
+
+        const avatar = Dom.el('div', { class: 'driver-info-avatar' });
+        if (order.driver_avatar_url) {
+            avatar.appendChild(Dom.el('img', {
+                src: order.driver_avatar_url, alt: order.driver_name, class: 'driver-info-avatar__img',
+            }));
+        } else {
+            const initials = (order.driver_name || '?')
+                .split(' ').map(p => p[0]).slice(0, 2).join('').toUpperCase();
+            avatar.appendChild(Dom.el('span', { class: 'driver-info-avatar__initials' }, [initials]));
+        }
+
+        const text = Dom.el('div', {});
+        text.appendChild(Dom.el('span', { class: 'info-row__label' }, ['Your Driver']));
+        text.appendChild(Dom.el('p', { class: 'driver-info-name' }, [order.driver_name]));
+
+        row.appendChild(avatar);
+        row.appendChild(text);
+        return row;
     }
 
     function buildInfoRow(label, value) {

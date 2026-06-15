@@ -70,6 +70,7 @@ const NavComponents = (() => {
             'register':         'Register',
             'vendor-dashboard': 'Dashboard',
             'vendor-menu':      'Menu',
+            'vendor-profile':   'My Restaurant',
             'driver-dashboard': 'Dashboard',
             'admin-dashboard':  'Dashboard',
             'profile':          'Profile',
@@ -111,9 +112,11 @@ const NavComponents = (() => {
         if (isLoggedIn && role === 'vendor') {
             const dashLink  = navLink('Dashboard',  'vendor-dashboard', currentView);
             const menuLink  = navLink('My Menu',    'vendor-menu',      currentView);
+            const profLink  = navLink('My Restaurant', 'vendor-profile', currentView);
             const ordLink   = navLink('Orders',     'orders',           currentView);
             links.appendChild(dashLink);
             links.appendChild(menuLink);
+            links.appendChild(profLink);
             links.appendChild(ordLink);
         }
 

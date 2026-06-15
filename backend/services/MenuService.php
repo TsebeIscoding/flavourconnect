@@ -10,6 +10,9 @@ use FlavourConnect\Exceptions\BusinessException;
 
 class MenuService
 {
+    private const ALLOWED_IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/webp'];
+    private const MAX_IMAGE_SIZE      = 3 * 1024 * 1024; // 3 MB
+
     public function __construct(private Database $db) {}
 
     public function getMenu(string $restaurantId, array $query): array
@@ -139,6 +142,80 @@ class MenuService
             "UPDATE menu_items SET is_available = false WHERE id = :id",
             ['id' => $itemId]
         );
+    }
+
+    public function uploadImage(string $itemId, string $vendorId, string $role): array
+    {
+        $item = $this->db->queryOne(
+            "SELECT mi.id, mi.image_path, r.vendor_id FROM menu_items mi
+             JOIN restaurants r ON r.id = mi.restaurant_id
+             WHERE mi.id = :id",
+            ['id' => $itemId]
+        );
+
+        if (!$item) {
+            throw new BusinessException('Menu item not found', 404, 'RESOURCE_NOT_FOUND');
+        }
+
+        if ($role === 'vendor' && $item['vendor_id'] !== $vendorId) {
+            throw new BusinessException('Access denied', 403, 'FORBIDDEN_OWNERSHIP');
+        }
+
+        if (!isset($_FILES['image'])) {
+            throw new BusinessException('No file uploaded', 400, 'VALIDATION_FAILED');
+        }
+
+        $file = $_FILES['image'];
+
+        if ($file['error'] !== UPLOAD_ERR_OK) {
+            throw new BusinessException('File upload failed', 400, 'UPLOAD_ERROR');
+        }
+
+        if ($file['size'] > self::MAX_IMAGE_SIZE) {
+            throw new BusinessException('Image must be under 3MB', 422, 'VALIDATION_FAILED');
+        }
+
+        $finfo    = new \finfo(FILEINFO_MIME_TYPE);
+        $mimeType = $finfo->file($file['tmp_name']);
+
+        if (!in_array($mimeType, self::ALLOWED_IMAGE_TYPES, true)) {
+            throw new BusinessException('Image must be JPG, PNG, or WebP', 422, 'VALIDATION_FAILED');
+        }
+
+        $ext = match($mimeType) {
+            'image/jpeg' => 'jpg',
+            'image/png'  => 'png',
+            'image/webp' => 'webp',
+        };
+
+        $filename = bin2hex(random_bytes(16)) . '.' . $ext;
+        $dir      = FC_ROOT . '/uploads/menu';
+        if (!is_dir($dir)) {
+            mkdir($dir, 0755, true);
+        }
+        $destPath = $dir . '/' . $filename;
+
+        if (!move_uploaded_file($file['tmp_name'], $destPath)) {
+            throw new BusinessException('Failed to save file', 500, 'UPLOAD_ERROR');
+        }
+
+        $imagePath = '/uploads/menu/' . $filename;
+
+        // Remove old image if present
+        if (!empty($item['image_path'])) {
+            $oldFile = FC_ROOT . $item['image_path'];
+            if (is_file($oldFile)) {
+                @unlink($oldFile);
+            }
+        }
+
+        $this->db->execute(
+            "UPDATE menu_items SET image_path = :path WHERE id = :id",
+            ['path' => $imagePath, 'id' => $itemId]
+        );
+
+        $baseUrl = $_ENV['APP_URL'] ?? 'https://api.flavourconnect.com';
+        return ['image_url' => $baseUrl . $imagePath];
     }
 
     private function formatItem(array $item): array

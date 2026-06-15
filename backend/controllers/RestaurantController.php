@@ -54,6 +54,27 @@ class RestaurantController
         $this->response->success($result);
     }
 
+    public function uploadPhoto(array $params, ?array $claims): never
+    {
+        $result = $this->restaurantService->uploadPhoto(
+            $params['id'],
+            $claims['sub'],
+            $claims['role']
+        );
+        $this->response->success($result, 201);
+    }
+
+    public function deletePhoto(array $params, ?array $claims): never
+    {
+        $this->restaurantService->deletePhoto(
+            $params['id'],
+            $params['photoId'],
+            $claims['sub'],
+            $claims['role']
+        );
+        $this->response->success(['message' => 'Photo deleted']);
+    }
+
     private function parseBody(): array
     {
         $raw  = file_get_contents('php://input');

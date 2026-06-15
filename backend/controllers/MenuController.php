@@ -40,6 +40,12 @@ class MenuController
         $this->response->success(['message' => 'Item disabled']);
     }
 
+    public function uploadImage(array $params, ?array $claims): never
+    {
+        $result = $this->menuService->uploadImage($params['id'], $claims['sub'], $claims['role']);
+        $this->response->success($result);
+    }
+
     private function parseBody(): array
     {
         $raw  = file_get_contents('php://input');

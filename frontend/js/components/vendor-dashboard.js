@@ -301,9 +301,13 @@ const VendorComponents = (() => {
         priceField.querySelector('input').setAttribute('step', '0.01');
         priceField.querySelector('input').setAttribute('min', '0.01');
 
+        // Image upload — preview + file input
+        const imageField = buildModalImageField(existingItem);
+
         form.appendChild(nameField);
         form.appendChild(descField);
         form.appendChild(priceField);
+        form.appendChild(imageField.wrapper);
         modal.appendChild(form);
 
         const actions = Dom.el('div', { class: 'modal__actions' });
@@ -327,15 +331,28 @@ const VendorComponents = (() => {
             saveBtn.textContent = 'Saving…';
 
             try {
+                let itemId = existingItem?.id;
+
                 if (existingItem) {
                     await Api.menu.update(existingItem.id, { name, description: desc, price });
                 } else {
                     // Need restaurant_id — fetch from vendor's own restaurant
                     const restData = await Http.get('/restaurants/mine');
-                    await Api.menu.create({
+                    const created  = await Api.menu.create({
                         restaurant_id: restData.restaurant.id,
                         name, description: desc, price,
                     });
+                    itemId = created?.menu_item?.id;
+                }
+
+                // Upload pending image, if one was selected
+                const pendingFile = imageField.getFile();
+                if (pendingFile && itemId) {
+                    try {
+                        await Api.menu.uploadImage(itemId, pendingFile);
+                    } catch (imgErr) {
+                        Actions.showToast(`Item saved, but image upload failed: ${imgErr.message}`, 'error');
+                    }
                 }
 
                 // Reload menu
@@ -374,6 +391,79 @@ const VendorComponents = (() => {
         return overlay;
     }
 
+    function buildModalImageField(existingItem) {
+        const wrapper = Dom.el('div', { class: 'form-field' });
+        wrapper.appendChild(Dom.el('label', { class: 'form-label' }, ['Photo']));
+
+        let selectedFile = null;
+
+        const row     = Dom.el('div', { class: 'modal-image-row' });
+        const preview = Dom.el('div', { class: 'modal-image-preview' });
+
+        if (existingItem?.image_url) {
+            preview.appendChild(Dom.el('img', {
+                src: existingItem.image_url, alt: '', class: 'modal-image-preview__img',
+            }));
+        } else {
+            preview.appendChild(Dom.el('span', { class: 'modal-image-preview__placeholder' }, ['No photo']));
+        }
+
+        const fileInput = Dom.el('input', {
+            type: 'file', accept: 'image/jpeg,image/png,image/webp', class: 'visually-hidden',
+        });
+
+        const chooseBtn = Dom.el('button', {
+            type: 'button', class: 'btn btn--secondary btn--sm',
+        }, [existingItem?.image_url ? 'Change Photo' : 'Add Photo']);
+        chooseBtn.addEventListener('click', () => fileInput.click());
+
+        fileInput.addEventListener('change', () => {
+            const file = fileInput.files[0];
+            if (!file) return;
+            selectedFile = file;
+
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                Dom.render(preview, Dom.el('img', {
+                    src: e.target.result, alt: '', class: 'modal-image-preview__img',
+                }));
+            };
+            reader.readAsDataURL(file);
+
+            // If editing an existing item, upload immediately
+            if (existingItem?.id) {
+                chooseBtn.disabled    = true;
+                chooseBtn.textContent = 'Uploading…';
+                Api.menu.uploadImage(existingItem.id, file)
+                    .then(() => {
+                        Actions.showToast('Photo updated', 'success');
+                        selectedFile = null; // already uploaded
+                    })
+                    .catch(err => Actions.showToast(err.message, 'error'))
+                    .finally(() => {
+                        chooseBtn.disabled    = false;
+                        chooseBtn.textContent = 'Change Photo';
+                    });
+            }
+        });
+
+        row.appendChild(preview);
+        row.appendChild(chooseBtn);
+        row.appendChild(fileInput);
+        wrapper.appendChild(row);
+
+        if (!existingItem) {
+            wrapper.appendChild(Dom.el('p', { class: 'form-field__hint' }, [
+                'The photo will be uploaded once the item is saved.',
+            ]));
+        }
+
+        return {
+            wrapper,
+            getFile: () => existingItem ? null : selectedFile, // existing items upload immediately, new items upload on save
+        };
+    }
+
     function buildModalField(label, type, value) {
         const field  = Dom.el('div', { class: 'form-field' });
         const lbl    = Dom.el('label', { class: 'form-label' }, [label]);
@@ -383,6 +473,359 @@ const VendorComponents = (() => {
         return field;
     }
 
-    return Object.freeze({ renderDashboard, renderMenuManager });
+    // ── RESTAURANT PROFILE ───────────────────────────────────────
+
+    function renderProfile(state) {
+        const container = Dom.qs('#view-content');
+        if (!container) return;
+
+        const restaurant = state.restaurants.current;
+        const wrapper = Dom.el('div', { class: 'vendor-profile' });
+
+        wrapper.appendChild(Dom.el('h1', { class: 'page-heading' }, ['My Restaurant']));
+
+        if (!restaurant) {
+            wrapper.appendChild(Dom.skeleton(4));
+            Dom.render(container, wrapper);
+            return;
+        }
+
+        wrapper.appendChild(buildLogoSection(restaurant));
+        wrapper.appendChild(buildProfileForm(restaurant));
+        wrapper.appendChild(buildPhotoGallery(restaurant));
+
+        Dom.render(container, wrapper);
+    }
+
+    // ── LOGO UPLOAD ──────────────────────────────────────────────
+
+    function buildLogoSection(restaurant) {
+        const section = Dom.el('section', { class: 'profile-section' });
+        section.appendChild(Dom.el('h2', { class: 'section-heading' }, ['Restaurant Logo']));
+
+        const row = Dom.el('div', { class: 'logo-upload-row' });
+
+        const preview = Dom.el('div', { class: 'logo-preview' });
+        if (restaurant.logo_url) {
+            preview.appendChild(Dom.el('img', {
+                src: restaurant.logo_url,
+                alt: `${restaurant.name} logo`,
+                class: 'logo-preview__img',
+            }));
+        } else {
+            preview.appendChild(Dom.el('span', { class: 'logo-preview__placeholder' }, ['No logo']));
+        }
+
+        const controls = Dom.el('div', { class: 'logo-upload-controls' });
+
+        const fileInput = Dom.el('input', {
+            type:   'file',
+            accept: 'image/jpeg,image/png,image/webp',
+            class:  'visually-hidden',
+            id:     'logo-file-input',
+        });
+
+        const chooseBtn = Dom.el('button', { class: 'btn btn--secondary' }, ['Choose Photo']);
+        chooseBtn.addEventListener('click', () => fileInput.click());
+
+        const hint = Dom.el('p', { class: 'form-field__hint' }, [
+            'JPG, PNG, or WebP. Max 2MB. Square images look best.',
+        ]);
+
+        const statusMsg = Dom.el('p', { class: 'upload-status', hidden: true });
+
+        fileInput.addEventListener('change', async () => {
+            const file = fileInput.files[0];
+            if (!file) return;
+
+            // Instant local preview
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                Dom.render(preview, Dom.el('img', {
+                    src: e.target.result,
+                    alt: 'New logo preview',
+                    class: 'logo-preview__img',
+                }));
+            };
+            reader.readAsDataURL(file);
+
+            chooseBtn.disabled    = true;
+            chooseBtn.textContent = 'Uploading…';
+            statusMsg.hidden      = true;
+
+            try {
+                const result = await Api.restaurants.uploadLogo(restaurant.id, file);
+                Actions.showToast('Logo updated', 'success');
+                // Refresh restaurant state with new logo_url
+                Store.dispatch('SET_RESTAURANT', { ...restaurant, logo_url: result.logo_url });
+            } catch (err) {
+                statusMsg.textContent = err.message;
+                statusMsg.className   = 'upload-status upload-status--error';
+                statusMsg.hidden      = false;
+            }
+
+            chooseBtn.disabled    = false;
+            chooseBtn.textContent = 'Choose Photo';
+        });
+
+        controls.appendChild(chooseBtn);
+        controls.appendChild(hint);
+        controls.appendChild(statusMsg);
+
+        row.appendChild(preview);
+        row.appendChild(controls);
+        row.appendChild(fileInput);
+        section.appendChild(row);
+
+        return section;
+    }
+
+    // ── PROFILE FORM ─────────────────────────────────────────────
+
+    function buildProfileForm(restaurant) {
+        const section = Dom.el('section', { class: 'profile-section' });
+        section.appendChild(Dom.el('h2', { class: 'section-heading' }, ['Restaurant Details']));
+
+        const form = Dom.el('div', { class: 'profile-form' });
+
+        const nameField  = profileField('Restaurant Name', 'text', restaurant.name, 255);
+        const descField  = profileTextarea('Description', restaurant.description || '', 2000);
+        const addrField  = profileField('Address', 'text', restaurant.address, 500);
+        const phoneField = profileField('Phone Number', 'tel', restaurant.phone, 30);
+        const tagsField  = profileField(
+            'Cuisine Tags',
+            'text',
+            (restaurant.cuisine_tags || []).join(', '),
+            255
+        );
+        tagsField.input.placeholder = 'italian, pizza, vegan';
+        const tagsHint = Dom.el('p', { class: 'form-field__hint' }, [
+            'Comma-separated. Helps customers find you when searching.',
+        ]);
+        tagsField.wrapper.appendChild(tagsHint);
+
+        form.appendChild(nameField.wrapper);
+        form.appendChild(descField.wrapper);
+        form.appendChild(addrField.wrapper);
+        form.appendChild(phoneField.wrapper);
+        form.appendChild(tagsField.wrapper);
+
+        const saveBtn = Dom.el('button', { class: 'btn btn--primary' }, ['Save Changes']);
+        const statusMsg = Dom.el('p', { class: 'upload-status', hidden: true });
+
+        saveBtn.addEventListener('click', async () => {
+            // Clear previous field errors
+            [nameField, descField, addrField, phoneField, tagsField].forEach(clearProfileError);
+            statusMsg.hidden = true;
+
+            const name        = nameField.input.value.trim();
+            const description = descField.input.value.trim();
+            const address      = addrField.input.value.trim();
+            const phone        = phoneField.input.value.trim();
+            const cuisineTags  = tagsField.input.value
+                .split(',')
+                .map(t => t.trim().toLowerCase())
+                .filter(Boolean)
+                .slice(0, 10);
+
+            let firstError = null;
+
+            if (!name || name.length < 2) {
+                setProfileError(nameField, 'Restaurant name must be at least 2 characters.');
+                firstError = firstError || nameField.input;
+            }
+            if (!address || address.length < 5) {
+                setProfileError(addrField, 'Address must be at least 5 characters.');
+                firstError = firstError || addrField.input;
+            }
+            if (!phone) {
+                setProfileError(phoneField, 'Phone number is required so customers and drivers can reach you.');
+                firstError = firstError || phoneField.input;
+            } else if (phone.length > 30) {
+                setProfileError(phoneField, 'Phone number must be 30 characters or fewer.');
+                firstError = firstError || phoneField.input;
+            }
+
+            if (firstError) {
+                firstError.focus();
+                return;
+            }
+
+            saveBtn.disabled    = true;
+            saveBtn.textContent = 'Saving…';
+
+            try {
+                const result = await Api.restaurants.update(restaurant.id, {
+                    name,
+                    description: description || null,
+                    address,
+                    phone,
+                    cuisine_tags: cuisineTags,
+                });
+                Store.dispatch('SET_RESTAURANT', result.restaurant || { ...restaurant, name, description, address, phone, cuisine_tags: cuisineTags });
+                Actions.showToast('Restaurant profile updated', 'success');
+            } catch (err) {
+                if (err.fields) {
+                    const fieldMap = {
+                        name: nameField, description: descField,
+                        address: addrField, phone: phoneField,
+                    };
+                    for (const [key, messages] of Object.entries(err.fields)) {
+                        if (fieldMap[key]) setProfileError(fieldMap[key], messages[0]);
+                    }
+                } else {
+                    statusMsg.textContent = err.message;
+                    statusMsg.className   = 'upload-status upload-status--error';
+                    statusMsg.hidden      = false;
+                }
+            }
+
+            saveBtn.disabled    = false;
+            saveBtn.textContent = 'Save Changes';
+        });
+
+        form.appendChild(saveBtn);
+        form.appendChild(statusMsg);
+        section.appendChild(form);
+
+        return section;
+    }
+
+    function profileField(label, type, value, maxlength) {
+        const wrapper = Dom.el('div', { class: 'form-field' });
+        const labelEl = Dom.el('label', { class: 'form-label' }, [label]);
+        const input    = Dom.el('input', {
+            type, class: 'form-input', maxlength: String(maxlength),
+        });
+        input.value = value || '';
+
+        const errorEl = Dom.el('p', { class: 'form-field__error', role: 'alert' });
+        errorEl.hidden = true;
+
+        wrapper.appendChild(labelEl);
+        wrapper.appendChild(input);
+        wrapper.appendChild(errorEl);
+
+        return { wrapper, input, errorEl };
+    }
+
+    function profileTextarea(label, value, maxlength) {
+        const wrapper = Dom.el('div', { class: 'form-field' });
+        const labelEl = Dom.el('label', { class: 'form-label' }, [label]);
+        const input    = Dom.el('textarea', {
+            class: 'form-input form-textarea', maxlength: String(maxlength), rows: '4',
+        });
+        input.value = value || '';
+
+        const errorEl = Dom.el('p', { class: 'form-field__error', role: 'alert' });
+        errorEl.hidden = true;
+
+        wrapper.appendChild(labelEl);
+        wrapper.appendChild(input);
+        wrapper.appendChild(errorEl);
+
+        return { wrapper, input, errorEl };
+    }
+
+    function setProfileError(field, message) {
+        field.input.classList.add('form-input--error');
+        field.errorEl.textContent = message;
+        field.errorEl.hidden = false;
+    }
+
+    function clearProfileError(field) {
+        field.input.classList.remove('form-input--error');
+        field.errorEl.textContent = '';
+        field.errorEl.hidden = true;
+    }
+
+    // ── PHOTO GALLERY (max 3) ────────────────────────────────────
+
+    function buildPhotoGallery(restaurant) {
+        const section = Dom.el('section', { class: 'profile-section' });
+        section.appendChild(Dom.el('h2', { class: 'section-heading' }, ['Food Photos']));
+        section.appendChild(Dom.el('p', { class: 'form-field__hint' }, [
+            'Show customers what your food looks like. Up to 3 photos, JPG/PNG/WebP, max 3MB each.',
+        ]));
+
+        const grid = Dom.el('div', { class: 'photo-gallery' });
+        renderPhotoGrid(grid, restaurant);
+        section.appendChild(grid);
+
+        return section;
+    }
+
+    function renderPhotoGrid(grid, restaurant) {
+        const photos = restaurant.photos || [];
+
+        Dom.render(grid, ...photos.map(photo => buildPhotoTile(photo, restaurant, grid)));
+
+        if (photos.length < 3) {
+            grid.appendChild(buildAddPhotoTile(restaurant, grid));
+        }
+    }
+
+    function buildPhotoTile(photo, restaurant, grid) {
+        const tile = Dom.el('div', { class: 'photo-tile' });
+        tile.appendChild(Dom.el('img', { src: photo.url, alt: 'Restaurant food photo', class: 'photo-tile__img' }));
+
+        const removeBtn = Dom.el('button', { class: 'photo-tile__remove', 'aria-label': 'Remove photo' }, ['✕']);
+        removeBtn.addEventListener('click', async () => {
+            removeBtn.disabled = true;
+            try {
+                await Api.restaurants.deletePhoto(restaurant.id, photo.id);
+                restaurant.photos = (restaurant.photos || []).filter(p => p.id !== photo.id);
+                Store.dispatch('SET_RESTAURANT', restaurant);
+                renderPhotoGrid(grid, restaurant);
+                Actions.showToast('Photo removed', 'success');
+            } catch (err) {
+                Actions.showToast(err.message, 'error');
+                removeBtn.disabled = false;
+            }
+        });
+
+        tile.appendChild(removeBtn);
+        return tile;
+    }
+
+    function buildAddPhotoTile(restaurant, grid) {
+        const tile = Dom.el('label', { class: 'photo-tile photo-tile--add' });
+
+        const input = Dom.el('input', {
+            type: 'file',
+            accept: 'image/jpeg,image/png,image/webp',
+            class: 'visually-hidden',
+        });
+
+        const plus = Dom.el('span', { class: 'photo-tile__plus' }, ['+']);
+        const text = Dom.el('span', { class: 'photo-tile__text' }, ['Add Photo']);
+
+        input.addEventListener('change', async () => {
+            const file = input.files[0];
+            if (!file) return;
+
+            tile.classList.add('photo-tile--loading');
+            Dom.render(tile, Dom.el('span', {}, ['Uploading…']));
+
+            try {
+                const result = await Api.restaurants.uploadPhoto(restaurant.id, file);
+                restaurant.photos = [...(restaurant.photos || []), result.photo];
+                Store.dispatch('SET_RESTAURANT', restaurant);
+                renderPhotoGrid(grid, restaurant);
+                Actions.showToast('Photo added', 'success');
+            } catch (err) {
+                Actions.showToast(err.message, 'error');
+                renderPhotoGrid(grid, restaurant);
+            }
+        });
+
+        tile.appendChild(input);
+        tile.appendChild(plus);
+        tile.appendChild(text);
+
+        return tile;
+    }
+
+    return Object.freeze({ renderDashboard, renderMenuManager, renderProfile });
 
 })();

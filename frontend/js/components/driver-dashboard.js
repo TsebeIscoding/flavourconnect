@@ -14,6 +14,9 @@ const DriverComponents = (() => {
         const heading = Dom.el('h1', { class: 'page-heading' }, ['Driver Dashboard']);
         wrapper.appendChild(heading);
 
+        // Profile photo upload
+        wrapper.appendChild(buildAvatarSection(auth.user));
+
         // Online/offline toggle
         const toggle = Dom.el('div', { class: 'driver-toggle' });
         const label  = Dom.el('label', { class: 'driver-toggle__label' });
@@ -122,6 +125,83 @@ const DriverComponents = (() => {
         card.appendChild(deliveredBtn);
 
         return card;
+    }
+
+    // ── PROFILE PHOTO ────────────────────────────────────────────
+
+    function buildAvatarSection(user) {
+        const section = Dom.el('div', { class: 'driver-avatar-section' });
+
+        const preview = Dom.el('div', { class: 'avatar-preview' });
+        if (user?.avatar_url) {
+            preview.appendChild(Dom.el('img', {
+                src: user.avatar_url, alt: 'Your profile photo', class: 'avatar-preview__img',
+            }));
+        } else {
+            const initials = (user?.full_name || '?')
+                .split(' ')
+                .map(p => p[0])
+                .slice(0, 2)
+                .join('')
+                .toUpperCase();
+            preview.appendChild(Dom.el('span', { class: 'avatar-preview__initials' }, [initials]));
+        }
+
+        const info = Dom.el('div', { class: 'driver-avatar-info' });
+        info.appendChild(Dom.el('p', { class: 'driver-avatar-name' }, [user?.full_name || '']));
+
+        const fileInput = Dom.el('input', {
+            type: 'file', accept: 'image/jpeg,image/png,image/webp', class: 'visually-hidden',
+        });
+
+        const chooseBtn = Dom.el('button', { class: 'btn btn--secondary btn--sm' }, [
+            user?.avatar_url ? 'Change Photo' : 'Add Profile Photo'
+        ]);
+        chooseBtn.addEventListener('click', () => fileInput.click());
+
+        const hint = Dom.el('p', { class: 'form-field__hint' }, [
+            'Customers see this photo during delivery tracking. JPG/PNG/WebP, max 2MB.',
+        ]);
+
+        fileInput.addEventListener('change', async () => {
+            const file = fileInput.files[0];
+            if (!file) return;
+
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                Dom.render(preview, Dom.el('img', {
+                    src: e.target.result, alt: 'Your profile photo', class: 'avatar-preview__img',
+                }));
+            };
+            reader.readAsDataURL(file);
+
+            chooseBtn.disabled    = true;
+            chooseBtn.textContent = 'Uploading…';
+
+            try {
+                const result = await Api.users.uploadAvatar(file);
+                Store.dispatch('SET_USER', {
+                    user: { ...user, avatar_url: result.avatar_url },
+                    accessToken: Store.accessToken(),
+                });
+                Actions.showToast('Profile photo updated', 'success');
+                chooseBtn.textContent = 'Change Photo';
+            } catch (err) {
+                Actions.showToast(err.message, 'error');
+                chooseBtn.textContent = user?.avatar_url ? 'Change Photo' : 'Add Profile Photo';
+            }
+
+            chooseBtn.disabled = false;
+        });
+
+        info.appendChild(chooseBtn);
+        info.appendChild(hint);
+        info.appendChild(fileInput);
+
+        section.appendChild(preview);
+        section.appendChild(info);
+
+        return section;
     }
 
     return Object.freeze({ renderDashboard });

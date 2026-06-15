@@ -14,6 +14,7 @@ use FlavourConnect\Controllers\CartController;
 use FlavourConnect\Controllers\OrderController;
 use FlavourConnect\Controllers\DriverController;
 use FlavourConnect\Controllers\AdminController;
+use FlavourConnect\Controllers\UserController;
 
 // ─────────────────────────────────────────────────────────────
 // Router — maps HTTP method + URI to controller action
@@ -46,12 +47,15 @@ class Router
         $this->add('GET',   '/restaurants/{id}',   [RestaurantController::class, 'show']);
         $this->add('PATCH', '/restaurants/{id}',   [RestaurantController::class, 'update'],    auth: true, roles: ['vendor', 'admin']);
         $this->add('POST',  '/restaurants/{id}/logo', [RestaurantController::class, 'uploadLogo'], auth: true, roles: ['vendor', 'admin']);
+        $this->add('POST',  '/restaurants/{id}/photos', [RestaurantController::class, 'uploadPhoto'], auth: true, roles: ['vendor', 'admin']);
+        $this->add('DELETE','/restaurants/{id}/photos/{photoId}', [RestaurantController::class, 'deletePhoto'], auth: true, roles: ['vendor', 'admin']);
 
         // ── Menu ──────────────────────────────────────────────
         $this->add('GET',   '/restaurants/{id}/menu', [MenuController::class, 'index']);
         $this->add('POST',  '/menu',           [MenuController::class, 'store'],   auth: true, roles: ['vendor', 'admin']);
         $this->add('PATCH', '/menu/{id}',      [MenuController::class, 'update'],  auth: true, roles: ['vendor', 'admin']);
         $this->add('DELETE','/menu/{id}',      [MenuController::class, 'destroy'], auth: true, roles: ['vendor', 'admin']);
+        $this->add('POST',  '/menu/{id}/image', [MenuController::class, 'uploadImage'], auth: true, roles: ['vendor', 'admin']);
 
         // ── Cart ──────────────────────────────────────────────
         $this->add('GET',    '/cart',         [CartController::class, 'show'],    auth: true, roles: ['customer']);
@@ -66,6 +70,11 @@ class Router
         $this->add('GET',   '/orders/driver',           [OrderController::class, 'driverOrders'],    auth: true, roles: ['driver']);
         $this->add('GET',   '/orders/{id}',             [OrderController::class, 'show'],            auth: true);
         $this->add('PATCH', '/orders/{id}/status',      [OrderController::class, 'updateStatus'],    auth: true, roles: ['vendor', 'driver', 'customer']);
+
+        // ── User Profile (all authenticated roles) ─────────────
+        $this->add('GET',   '/users/me',        [UserController::class, 'show'],        auth: true);
+        $this->add('PATCH', '/users/me',        [UserController::class, 'update'],      auth: true);
+        $this->add('POST',  '/users/me/avatar', [UserController::class, 'uploadAvatar'], auth: true);
 
         // ── Driver ────────────────────────────────────────────
         $this->add('PATCH', '/drivers/status', [DriverController::class, 'setOnlineStatus'], auth: true, roles: ['driver']);

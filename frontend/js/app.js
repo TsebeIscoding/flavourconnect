@@ -104,7 +104,7 @@
 
         // Guard: redirect unauthenticated users from protected views
         const publicViews   = new Set(['home', 'login', 'register', 'restaurant']);
-        const protectedViews = new Set(['checkout', 'orders', 'order-detail', 'vendor-dashboard', 'vendor-menu', 'driver-dashboard', 'admin-dashboard']);
+        const protectedViews = new Set(['checkout', 'orders', 'order-detail', 'vendor-dashboard', 'vendor-menu', 'vendor-profile', 'driver-dashboard', 'admin-dashboard']);
 
         if (protectedViews.has(view) && !state.auth.user) {
             Store.dispatch('NAVIGATE', { view: 'login' });
@@ -163,6 +163,12 @@
             case 'vendor-menu':
                 if (typeof VendorComponents !== 'undefined') {
                     VendorComponents.renderMenuManager(state);
+                }
+                break;
+
+            case 'vendor-profile':
+                if (typeof VendorComponents !== 'undefined') {
+                    VendorComponents.renderProfile(state);
                 }
                 break;
 
@@ -239,6 +245,16 @@
                 }
                 break;
 
+            case 'vendor-profile':
+                if (role === 'vendor') {
+                    Api.restaurants.mine().then(data => {
+                        if (data?.restaurant) {
+                            Store.dispatch('SET_RESTAURANT', data.restaurant);
+                        }
+                    }).catch(() => {});
+                }
+                break;
+
             case 'driver-dashboard':
                 if (role === 'driver') {
                     Actions.loadOrders('driver');
@@ -306,6 +322,8 @@
             'orders':           'Orders',
             'order-detail':     'Order Detail',
             'vendor-dashboard': 'Vendor Dashboard',
+            'vendor-menu':      'Menu Manager',
+            'vendor-profile':   'Restaurant Profile',
             'driver-dashboard': 'Driver Dashboard',
             'admin-dashboard':  'Admin Dashboard',
         };

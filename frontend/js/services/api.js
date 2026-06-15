@@ -32,6 +32,12 @@ const Api = (() => {
             fd.append('logo', file);
             return Http.upload(`/restaurants/${id}/logo`, fd);
         },
+        uploadPhoto: (id, file)   => {
+            const fd = new FormData();
+            fd.append('photo', file);
+            return Http.upload(`/restaurants/${id}/photos`, fd);
+        },
+        deletePhoto: (id, photoId) => Http.delete(`/restaurants/${id}/photos/${photoId}`),
     };
 
     // ── MENU ─────────────────────────────────────────────────────
@@ -44,6 +50,11 @@ const Api = (() => {
         create:  (data)          => Http.post('/menu', data),
         update:  (id, data)      => Http.patch(`/menu/${id}`, data),
         destroy: (id)            => Http.delete(`/menu/${id}`),
+        uploadImage: (id, file)  => {
+            const fd = new FormData();
+            fd.append('image', file);
+            return Http.upload(`/menu/${id}/image`, fd);
+        },
     };
 
     // ── CART ─────────────────────────────────────────────────────
@@ -96,7 +107,19 @@ const Api = (() => {
         getStats:   ()            => Http.get('/admin/stats'),
     };
 
-    return Object.freeze({ auth, restaurants, menu, cart, orders, drivers, admin });
+    // ── USERS (profile, all roles) ──────────────────────────────
+
+    const users = {
+        getProfile:    ()         => Http.get('/users/me'),
+        updateProfile: (data)     => Http.patch('/users/me', data),
+        uploadAvatar:  (file)     => {
+            const fd = new FormData();
+            fd.append('avatar', file);
+            return Http.upload('/users/me/avatar', fd);
+        },
+    };
+
+    return Object.freeze({ auth, restaurants, menu, cart, orders, drivers, admin, users });
 
 })();
 

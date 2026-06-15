@@ -18,11 +18,13 @@ use FlavourConnect\Controllers\CartController;
 use FlavourConnect\Controllers\OrderController;
 use FlavourConnect\Controllers\DriverController;
 use FlavourConnect\Controllers\AdminController;
+use FlavourConnect\Controllers\UserController;
 use FlavourConnect\Services\AuthService;
 use FlavourConnect\Services\RestaurantService;
 use FlavourConnect\Services\MenuService;
 use FlavourConnect\Services\CartService;
 use FlavourConnect\Services\OrderService;
+use FlavourConnect\Services\UserService;
 use FlavourConnect\Services\WebSocketNotifier;
 use FlavourConnect\Routes\Router;
 
@@ -92,6 +94,9 @@ class Container
             $this->get(Database::class),
             $this->get(WebSocketNotifier::class)
         ));
+        $this->singleton(UserService::class, fn() => new UserService(
+            $this->get(Database::class)
+        ));
 
         // Controllers
         $this->singleton(AuthController::class, fn() => new AuthController(
@@ -120,6 +125,10 @@ class Container
         ));
         $this->singleton(AdminController::class, fn() => new AdminController(
             $this->get(Database::class),
+            $this->get(ResponseHelper::class)
+        ));
+        $this->singleton(UserController::class, fn() => new UserController(
+            $this->get(UserService::class),
             $this->get(ResponseHelper::class)
         ));
 

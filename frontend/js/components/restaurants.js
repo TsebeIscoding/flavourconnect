@@ -299,8 +299,26 @@ const RestaurantComponents = (() => {
 
         Dom.render(container,
             renderRestaurantHeader(restaurant),
+            renderPhotoGallery(restaurant),
             renderMenuSection(items, isLoading, restaurant)
         );
+    }
+
+    function renderPhotoGallery(restaurant) {
+        if (!restaurant || !restaurant.photos || restaurant.photos.length === 0) {
+            return Dom.el('div', { class: 'photo-gallery-empty', hidden: true });
+        }
+
+        const section = Dom.el('div', { class: 'restaurant-gallery' });
+        restaurant.photos.forEach(photo => {
+            section.appendChild(Dom.el('img', {
+                src: photo.url,
+                alt: `${restaurant.name} food photo`,
+                class: 'restaurant-gallery__img',
+                loading: 'lazy',
+            }));
+        });
+        return section;
     }
 
     function renderRestaurantHeader(restaurant) {
@@ -365,6 +383,15 @@ const RestaurantComponents = (() => {
         const card = Dom.el('div', {
             class: `menu-item ${!item.is_available ? 'menu-item--unavailable' : ''}`,
         });
+
+        if (item.image_url) {
+            card.appendChild(Dom.el('img', {
+                src: item.image_url,
+                alt: item.name,
+                class: 'menu-item__img',
+                loading: 'lazy',
+            }));
+        }
 
         const body = Dom.el('div', { class: 'menu-item__body' });
 

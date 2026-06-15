@@ -313,12 +313,18 @@ class OrderService
 
     public function findById(string $orderId, string $actorId, string $role): array
     {
+        $baseUrl = $_ENV['APP_URL'] ?? 'https://api.flavourconnect.com';
+
         $order = $this->db->queryOne(
             "SELECT o.*, r.name as restaurant_name,
-                    u.full_name as customer_name
+                    u.full_name as customer_name,
+                    d.full_name as driver_name,
+                    d.phone as driver_phone,
+                    d.avatar_path as driver_avatar_path
              FROM orders o
              JOIN restaurants r ON r.id = o.restaurant_id
              JOIN users u ON u.id = o.customer_id
+             LEFT JOIN users d ON d.id = o.driver_id
              WHERE o.id = :id",
             ['id' => $orderId]
         );
@@ -338,6 +344,13 @@ class OrderService
         );
 
         $order['items'] = $items;
+
+        // Format driver avatar URL and remove raw path from response
+        $order['driver_avatar_url'] = !empty($order['driver_avatar_path'])
+            ? $baseUrl . $order['driver_avatar_path']
+            : null;
+        unset($order['driver_avatar_path']);
+
         return $order;
     }
 

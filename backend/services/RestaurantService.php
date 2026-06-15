@@ -10,8 +10,12 @@ use FlavourConnect\Exceptions\BusinessException;
 
 class RestaurantService
 {
-    private const ALLOWED_LOGO_TYPES = ['image/jpeg', 'image/png', 'image/webp'];
-    private const MAX_LOGO_SIZE      = 2 * 1024 * 1024; // 2 MB
+    private const ALLOWED_LOGO_TYPES  = ['image/jpeg', 'image/png', 'image/webp'];
+    private const MAX_LOGO_SIZE       = 2 * 1024 * 1024; // 2 MB
+
+    private const ALLOWED_PHOTO_TYPES = ['image/jpeg', 'image/png', 'image/webp'];
+    private const MAX_PHOTO_SIZE      = 3 * 1024 * 1024; // 3 MB
+    private const MAX_PHOTOS          = 3;
 
     public function __construct(private Database $db) {}
 
@@ -55,7 +59,7 @@ class RestaurantService
             array_merge($params, ['limit' => $limit, 'offset' => $offset])
         );
 
-        $rows = array_map(fn($r) => $this->formatRestaurant($r), $rows);
+        $rows = array_map(fn($r) => $this->formatRestaurant($r, includePhotos: false), $rows);
 
         return ['restaurants' => $rows, 'pagination' => compact('page', 'limit', 'total')];
     }
@@ -193,7 +197,138 @@ class RestaurantService
         return ['logo_url' => $baseUrl . $logoPath];
     }
 
-    private function formatRestaurant(array $r): array
+    public function uploadPhoto(string $restaurantId, string $vendorId, string $role): array
+    {
+        if ($role === 'vendor') {
+            $owns = $this->db->queryOne(
+                "SELECT id FROM restaurants WHERE id = :rid AND vendor_id = :vid",
+                ['rid' => $restaurantId, 'vid' => $vendorId]
+            );
+            if (!$owns) {
+                throw new BusinessException('Access denied', 403, 'FORBIDDEN_OWNERSHIP');
+            }
+        }
+
+        // Enforce max photos before touching the filesystem
+        $count = (int)$this->db->queryOne(
+            "SELECT COUNT(*) as count FROM restaurant_photos WHERE restaurant_id = :rid",
+            ['rid' => $restaurantId]
+        )['count'];
+
+        if ($count >= self::MAX_PHOTOS) {
+            throw new BusinessException(
+                'You can upload a maximum of ' . self::MAX_PHOTOS . ' photos. Delete one first.',
+                422,
+                'PHOTO_LIMIT_REACHED'
+            );
+        }
+
+        if (!isset($_FILES['photo'])) {
+            throw new BusinessException('No file uploaded', 400, 'VALIDATION_FAILED');
+        }
+
+        $file = $_FILES['photo'];
+
+        if ($file['error'] !== UPLOAD_ERR_OK) {
+            throw new BusinessException('File upload failed', 400, 'UPLOAD_ERROR');
+        }
+
+        if ($file['size'] > self::MAX_PHOTO_SIZE) {
+            throw new BusinessException('Photo must be under 3MB', 422, 'VALIDATION_FAILED');
+        }
+
+        $finfo    = new \finfo(FILEINFO_MIME_TYPE);
+        $mimeType = $finfo->file($file['tmp_name']);
+
+        if (!in_array($mimeType, self::ALLOWED_PHOTO_TYPES, true)) {
+            throw new BusinessException('Photo must be JPG, PNG, or WebP', 422, 'VALIDATION_FAILED');
+        }
+
+        $ext = match($mimeType) {
+            'image/jpeg' => 'jpg',
+            'image/png'  => 'png',
+            'image/webp' => 'webp',
+        };
+
+        $filename = bin2hex(random_bytes(16)) . '.' . $ext;
+        $dir      = FC_ROOT . '/uploads/restaurant-photos';
+        if (!is_dir($dir)) {
+            mkdir($dir, 0755, true);
+        }
+        $destPath = $dir . '/' . $filename;
+
+        if (!move_uploaded_file($file['tmp_name'], $destPath)) {
+            throw new BusinessException('Failed to save file', 500, 'UPLOAD_ERROR');
+        }
+
+        $photoPath = '/uploads/restaurant-photos/' . $filename;
+
+        $photo = $this->db->insert(
+            "INSERT INTO restaurant_photos (restaurant_id, image_path, display_order)
+             VALUES (:rid, :path, :order)",
+            ['rid' => $restaurantId, 'path' => $photoPath, 'order' => $count]
+        );
+
+        $baseUrl = $_ENV['APP_URL'] ?? 'https://api.flavourconnect.com';
+
+        return [
+            'photo' => [
+                'id'  => $photo['id'],
+                'url' => $baseUrl . $photoPath,
+            ],
+        ];
+    }
+
+    public function deletePhoto(string $restaurantId, string $photoId, string $vendorId, string $role): void
+    {
+        if ($role === 'vendor') {
+            $owns = $this->db->queryOne(
+                "SELECT id FROM restaurants WHERE id = :rid AND vendor_id = :vid",
+                ['rid' => $restaurantId, 'vid' => $vendorId]
+            );
+            if (!$owns) {
+                throw new BusinessException('Access denied', 403, 'FORBIDDEN_OWNERSHIP');
+            }
+        }
+
+        $photo = $this->db->queryOne(
+            "SELECT id, image_path FROM restaurant_photos WHERE id = :id AND restaurant_id = :rid",
+            ['id' => $photoId, 'rid' => $restaurantId]
+        );
+
+        if (!$photo) {
+            throw new BusinessException('Photo not found', 404, 'RESOURCE_NOT_FOUND');
+        }
+
+        $this->db->execute(
+            "DELETE FROM restaurant_photos WHERE id = :id",
+            ['id' => $photoId]
+        );
+
+        $filePath = FC_ROOT . $photo['image_path'];
+        if (is_file($filePath)) {
+            @unlink($filePath);
+        }
+    }
+
+    private function getPhotos(string $restaurantId): array
+    {
+        $baseUrl = $_ENV['APP_URL'] ?? 'https://api.flavourconnect.com';
+
+        $rows = $this->db->query(
+            "SELECT id, image_path FROM restaurant_photos
+             WHERE restaurant_id = :rid
+             ORDER BY display_order ASC, created_at ASC",
+            ['rid' => $restaurantId]
+        );
+
+        return array_map(fn($p) => [
+            'id'  => $p['id'],
+            'url' => $baseUrl . $p['image_path'],
+        ], $rows);
+    }
+
+    private function formatRestaurant(array $r, bool $includePhotos = true): array
     {
         $baseUrl = $_ENV['APP_URL'] ?? 'https://api.flavourconnect.com';
 
@@ -215,6 +350,7 @@ class RestaurantService
             'logo_url'     => $r['logo_path'] ? $baseUrl . $r['logo_path'] : null,
             'is_open'      => (bool)$r['is_open'],
             'cuisine_tags' => array_values($tags),
+            'photos'       => $includePhotos ? $this->getPhotos($r['id']) : [],
         ];
     }
 }
